@@ -1,0 +1,22 @@
+# environments and third-party code / weights (downloaded by setup.sh)
+.venv/
+third_party/
+__pycache__/
+.DS_Store
+
+# data, runs and outputs
+data/
+runs/
+reports/
+dist/
+output/*
+!output/.keep
+input/*
+!input/example.mp4
+!input/README.md
+
+# model weights (published as a GitHub release asset)
+weights/*
+!weights/README.md
+*.pt
+*.onnx

@@ -1,0 +1,22 @@
+torch>=2.1
+torchvision
+numpy
+scipy
+opencv-python
+pillow
+tqdm
+onnxruntime
+uniface>=4.0
+# ProPainter dependencies
+einops
+addict
+future
+scikit-image
+imageio
+imageio-ffmpeg
+pyyaml
+timm
+av
+matplotlib
+yapf
+requests

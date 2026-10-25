@@ -1,0 +1,8 @@
+# extra dependencies for training / data synthesis (not needed by the inference requirements.txt)
+# minimal dependencies of LivePortrait (third_party/LivePortrait, pose augmentation method C)
+tyro
+rich
+pykalman
+onnx
+gdown
+pyarrow
