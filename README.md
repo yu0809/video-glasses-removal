@@ -15,7 +15,8 @@ Faces: FFHQ ([Karras et al. 2019](#references)), re-posed with LivePortrait.*
 - **Problem.** Removing eyeglasses from video is mostly a *masking* problem: a good video inpainter (ProPainter) can fill thin regions well, but only if it is told exactly where the frame is. Face-parsing masks fall apart when the head looks up or down, tilts, turns, or is small and blurry.
 - **Approach.** Train a dedicated **frame-only segmentation network** (frame, bridge, nose pads, hinges, visible temples; lens interior untouched) on **synthetic data only**: 55k public no-glasses faces, re-posed with LivePortrait and mesh re-projection, with **procedurally rendered 3D glasses** that give pixel-exact labels. No manual annotation.
 - **Result (end-to-end, 11 synthetic test scenes with ground truth).** Frames that still show glasses after removal: **16%** with this model vs. **46%** with glasses-detector and **63%** with the original rule-based mask, at a comparable mask area. The largest gaps are exactly the hard cases: looking up/down ±40° (4% vs. 38% vs. 98%), roll 30° + pitch 30° (0% vs. 87% vs. 81%).
-- **Honest caveats.** The end-to-end benchmark is rendered by this project's own synthesizer (home advantage). On clean, near-frontal **real** photos glasses-detector still has higher outline recall (0.94 vs. 0.90 F); about half of that gap is mask thickness, the other half is genuine misses. Tiny faces (30–60 px) remain hard for every method.
+- **Independent check on hard poses.** On Microsoft's Face Synthetics (someone else's renderer, exact frame labels), on 454 clear-lens images with large pitch, yaw, roll or combinations: boundary F1 **0.86** vs. 0.77 (take-off-eyeglasses), 0.72 (glasses-detector) and 0.58 (rule-based); the 95% bootstrap interval of every gap excludes zero (§5.4).
+- **Honest caveats.** The end-to-end benchmark is rendered by this project's own synthesizer (home advantage). On near-frontal Face Synthetics faces take-off-eyeglasses is slightly more accurate (0.93 vs. 0.92). On clean, near-frontal **real** photos glasses-detector still has higher outline recall (0.94 vs. 0.90 F); about half of that gap is mask thickness, the other half is genuine misses. Tiny faces (30–60 px) remain hard for every method.
 
 | | Ours | glasses-detector (medium) | Rule-based | take-off-eyeglasses |
 |---|---|---|---|---|
@@ -23,7 +24,7 @@ Faces: FFHQ ([Karras et al. 2019](#references)), re-posed with LivePortrait.*
 | Real photos, F, original / roll ±30° (↑) | 0.90 / 0.88 | **0.94 / 0.91** | 0.88 / 0.74 | 0.83 / 0.62 |
 | Real photos, F, tiny face / motion blur (↑) | **0.83** / 0.82 | 0.67 / 0.82 | 0.61 / 0.81 | 0.12 / 0.44 |
 | False-positive area on faces without glasses (↓) | 0.11% | 2.50% | **0.01%** | 0.08% |
-| Face Synthetics, boundary F1, clear lenses (↑) | **0.89** | 0.75 | 0.59 | 0.88 |
+| Face Synthetics (third party), boundary F1, near frontal / 454 hard poses (↑) | 0.92 / **0.86** | 0.79 / 0.72 | 0.64 / 0.58 | **0.93** / 0.77 |
 
 ---
 
@@ -171,9 +172,44 @@ The mask comparison shows the qualitative difference behind the numbers: this mo
 - Part of that gap is mask thickness: dilating this model's prediction by 4 px (what the pipeline does anyway) raises F from 0.901 to 0.915 and recall from 0.85 to 0.89; glasses-detector sits at 0.939 / 0.95. The remaining recall gap is real: thin real frames are occasionally missed, which shows up as short leftover segments in real videos.
 - This model is clearly ahead on **tiny faces** (0.83 vs. 0.67) and has **~23× fewer false positives** on faces without glasses (0.11% vs. 2.5% of the image), which matters for video where many frames and many people have no glasses.
 
-On Microsoft's Face Synthetics ([Wood et al. 2021](#references)), a different synthetic renderer whose `GLASSES` class equals the frame when lenses are clear (59 such images, so indicative only), boundary F1 is 0.89 / 0.88 / 0.80 / 0.79 (original / roll / tiny / blur) for this model, 0.75 / 0.73 / 0.51 / 0.62 for glasses-detector medium and 0.88 / 0.74 / 0.19 / 0.44 for take-off-eyeglasses.
+CelebAMask-HQ is almost entirely near frontal: by HeadPose estimate only 4 of the 1,415 photos look up or down by more than 25°, and none is tilted by more than 25°. These numbers therefore say little about hard poses; §5.4 covers them.
 
-### 5.4 A real video
+### 5.4 Hard head poses on someone else's synthetic data
+
+§5.1 and §5.2 use this project's own renderer, and the real photos in §5.3 are frontal. No public dataset has real photos of glasses with frame-level labels at large poses, so the closest independent test is Microsoft's **Face Synthetics** ([Wood et al. 2021](#references)): a different renderer, made for face analysis rather than for glasses, whose `GLASSES` class is exactly the frame when the lenses are clear.
+
+- **Data**: part 1 of the full dataset (25,568 of the 100,000 renders): 3,662 images with glasses, of which 1,498 have clear lenses. Only 6 images with glasses were lost because no face was detected.
+- **Pose**: computed from the dataset's exact landmarks, not from a network: pitch and yaw by PnP against a 68-point mean face, roll from the line through the pupils. "Hard" means looking up/down by more than 25°, turning by more than 45°, tilting by more than 25°, or at least two axes beyond 25°: 454 of the 1,498 images.
+- **Metric**: boundary F1 (2 px) on the same 512 px pipeline crop for every method, authors' released weights for the baselines.
+
+![Face Synthetics by head pose](docs/images/fsynth_hard_pose.png)
+
+| Clear lenses, boundary F1 | n | **Ours** | take-off-eyeglasses | glasses-detector | Rule-based |
+|---|---|---|---|---|---|
+| Near frontal (all axes < 15°) | 392 | 0.921 | **0.934** | 0.791 | 0.638 |
+| Look up / down > 25° | 324 | **0.861** | 0.784 | 0.721 | 0.568 |
+| Look up / down > 40° | 125 | **0.832** | 0.703 | 0.661 | 0.516 |
+| Head turn > 45° | 219 | **0.823** | 0.691 | 0.661 | 0.575 |
+| Tilt > 25° | 91 | **0.780** | 0.582 | 0.572 | 0.488 |
+| Two or more axes > 25° | 199 | **0.828** | 0.704 | 0.662 | 0.546 |
+| **All hard poses** | 454 | **0.858** | 0.774 | 0.715 | 0.579 |
+| All hard poses + tiny face | 454 | **0.778** | 0.119 | 0.448 | 0.343 |
+| All hard poses + motion blur | 454 | **0.761** | 0.331 | 0.565 | 0.489 |
+
+- **The lead on hard poses is not noise.** Paired bootstrap over the 454 hard-pose images, 95% interval of the gap in boundary F1: +0.084 [+0.071, +0.098] over take-off-eyeglasses, +0.143 [+0.133, +0.154] over glasses-detector and +0.279 [+0.266, +0.292] over the rule-based mask. This model scores higher on 74%, 95% and 98% of the images respectively.
+- **The gap grows with difficulty.** From near frontal to a tilt beyond 25°, this model goes from 0.92 to 0.78, take-off-eyeglasses from 0.93 to 0.58 and glasses-detector from 0.79 to 0.57.
+- **Where it is not ahead.** On near-frontal faces take-off-eyeglasses is slightly more accurate (gap −0.014 [−0.020, −0.007]); it was trained on 3D-rendered glasses that look much like these renders. With opaque lenses, where frame and lens are labelled together, glasses-detector is better (0.74 vs. 0.69, n = 2,164).
+- **Caveats.** These are still synthetic images, just not ours. The labels contain only the frame and the tolerance is 2 px, so masks that are drawn thick lose points; this is why glasses-detector stays below 0.8 even on frontal faces here while it leads on real photos (§5.3). Face Synthetics images are not reproduced in this post: the dataset's research-use agreement does not allow redistribution.
+
+Reproduce: download part 1 (`dataset_100000.zip.001`, 8.5 GB) from the [Face Synthetics repository](https://github.com/microsoft/FaceSynthetics), extract it as a stream (`bsdtar -xf - < dataset_100000.zip.001`), then
+
+```bash
+python training/eval_real.py prepare_fsynth --src <extracted>/dataset_100000 --name fsynth_p1 --out data/eval_cache
+python training/eval_real.py run --cache data/eval_cache --data fsynth_p1 --perturb orig small mblur \
+    --methods ours tog gd_medium rule --ckpt weights/frame_seg.pt --out reports/fsynth_p1
+```
+
+### 5.5 A real video
 
 ![Real video example](docs/images/real_example.jpg)
 
@@ -185,6 +221,7 @@ On Microsoft's Face Synthetics ([Wood et al. 2021](#references)), a different sy
 - **Real-image recall**: thin frames on real footage are sometimes partially missed (§5.3). Pseudo-label self-training on public real photos is the planned next step.
 - **Extreme combined poses** (|yaw| > 50° together with |pitch| > 30°) are under-represented in training data.
 - Sunglasses / dark lenses, lens reflections and lens refraction are out of scope (the lens interior is deliberately left unchanged).
+- **Near-frontal accuracy**: on frontal Face Synthetics renders take-off-eyeglasses is slightly more precise (§5.4), and on frontal real photos glasses-detector has higher outline recall (§5.3). The advantage of this model is concentrated in hard poses, tiny faces and blur.
 - Synthetic validation boundary F1 is 0.822; rimless frames (0.64) and faces under 80 px (0.65) pull it down.
 
 ## 7. Using it
@@ -246,3 +283,4 @@ No datasets, face crops, test videos, training runs or third-party weights are i
 - Cheng et al. *VideoReTalking: Audio-based Lip Synchronization for Talking Head Video Editing in the Wild.* SIGGRAPH Asia 2022 (sample talking-head clips used for smoke tests).
 - Ronneberger, Fischer, Brox. *U-Net.* MICCAI 2015 · He et al. *Deep Residual Learning.* CVPR 2016 · Wightman. *PyTorch Image Models (timm).*
 - Face detection, landmarks, parsing and head pose run through [uniface](https://github.com/yakhyo/uniface) (MIT).
+- The 68-point mean face used to compute head pose from Face Synthetics landmarks is from [yinguobing/head-pose-estimation](https://github.com/yinguobing/head-pose-estimation) (MIT).

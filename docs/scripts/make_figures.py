@@ -9,6 +9,7 @@ Inputs (produced by the evaluation scripts):
   reports/compare_r1/per_image.csv      training/eval_real.py (CelebAMask-HQ real photos / Face Synthetics)
   reports/videos_crop_<method>/per_frame.csv  training/evaluate.py videos (per-frame segmentation on test videos)
   reports/val_r1/per_sample.csv         training/evaluate.py val (synthetic validation buckets)
+  reports/fsynth_p1/per_image.csv       training/eval_real.py run --data fsynth_p1 (Face Synthetics part 1 by head pose)
   data/faces_pool/index.jsonl           training/prepare_faces.py etc. (pose distribution of the face pool)
 """
 import csv
@@ -251,9 +252,68 @@ def val_buckets():
     return out
 
 
+# ----------------------------------------------------------------------------
+# 6. Hard head poses on third-party synthetic data (Microsoft Face Synthetics, part 1, clear lenses)
+# ----------------------------------------------------------------------------
+def fsynth_hard():
+    rows = [r for r in csv.DictReader(open(os.path.join(ROOT, "reports/fsynth_p1/per_image.csv"))) if r["kind"] == "clear"]
+    methods = ["ours", "tog", "gd_medium", "rule"]
+
+    def axes(r):
+        return abs(float(r["lm_pitch"])), abs(float(r["lm_yaw"])), abs(float(r["lm_roll"]))
+
+    def hard(r):
+        p, y, ro = axes(r)
+        return p >= 25 or y >= 45 or ro >= 25 or (p >= 25) + (y >= 25) + (ro >= 25) >= 2
+
+    buckets = [("Near frontal\n(all < 15°)", lambda r: max(axes(r)) < 15),
+               ("Look up/down\n> 25°", lambda r: axes(r)[0] >= 25),
+               ("Look up/down\n> 40°", lambda r: axes(r)[0] >= 40),
+               ("Head turn\n> 45°", lambda r: axes(r)[1] >= 45),
+               ("Tilt (roll)\n> 25°", lambda r: axes(r)[2] >= 25),
+               ("Two or more\naxes > 25°", lambda r: sum(a >= 25 for a in axes(r)) >= 2)]
+    sel = lambda m, p: [r for r in rows if r["method"] == m and r["perturb"] == p]
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(13, 4.6), gridspec_kw=dict(width_ratios=[3, 1.3]))
+    w = 0.2
+    out = {}
+    for k, m in enumerate(methods):
+        rr = sel(m, "orig")
+        x = np.arange(len(buckets)) + (k - 1.5) * w
+        v = [np.mean([float(r["bf1"]) for r in rr if f(r)]) for _, f in buckets]
+        out[m] = dict(zip([b.replace("\n", " ") for b, _ in buckets], v))
+        ax.bar(x, v, width=w - 0.02, color=COLOR[m], edgecolor=SURFACE, linewidth=1)
+        for xx, vv in zip(x, v):
+            ax.text(xx, vv + 0.01, f"{vv:.2f}", ha="center", va="bottom", fontsize=7, color=INK2, rotation=90)
+    ns = [sum(1 for r in sel("ours", "orig") if f(r)) for _, f in buckets]
+    ax.set_xticks(range(len(buckets)))
+    ax.set_xticklabels([f"{b}\nn = {n}" for (b, _), n in zip(buckets, ns)], fontsize=9)
+    ax.set_ylim(0, 1.12)
+    ax.set_ylabel("Boundary F1 (2 px)")
+    ax.set_title("Face Synthetics (Microsoft), clear lenses: frame segmentation by head pose")
+    ax.grid(axis="x", visible=False)
+    legend(ax, methods, loc="upper center", ncol=4, bbox_to_anchor=(0.5, -0.24), fontsize=9)
+
+    perts = [("orig", "Original"), ("small", "+ tiny face"), ("mblur", "+ motion blur")]
+    for k, m in enumerate(methods):
+        x = np.arange(len(perts)) + (k - 1.5) * w
+        v = [np.mean([float(r["bf1"]) for r in sel(m, p) if hard(r)]) for p, _ in perts]
+        out[m].update({f"hard {n}": vv for (_, n), vv in zip(perts, v)})
+        ax2.bar(x, v, width=w - 0.02, color=COLOR[m], edgecolor=SURFACE, linewidth=1)
+        for xx, vv in zip(x, v):
+            ax2.text(xx, vv + 0.01, f"{vv:.2f}", ha="center", va="bottom", fontsize=7, color=INK2, rotation=90)
+    ax2.set_xticks(range(len(perts)))
+    ax2.set_xticklabels([n for _, n in perts], fontsize=9)
+    ax2.set_ylim(0, 1.12)
+    ax2.set_title(f"All {sum(1 for r in sel('ours', 'orig') if hard(r))} hard-pose images\nwith degradations", fontsize=11)
+    ax2.grid(axis="x", visible=False)
+    save(fig, "fsynth_hard_pose.png")
+    return out
+
+
 if __name__ == "__main__":
     a = e2e()
     b = real_photos()
+    print(json.dumps(fsynth_hard(), indent=1, default=float))
     c = video_seg()
     pose_coverage()
     d = val_buckets()

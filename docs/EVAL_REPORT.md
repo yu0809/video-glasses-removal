@@ -11,6 +11,7 @@ The figures in the README are generated from these results by `docs/scripts/make
   - Tiny faces (0.83 vs. 0.67), false positives on faces without glasses (0.11% vs. 2.5% of the image) and frame-accurate labels (Face Synthetics 0.89 vs. 0.75): this model is clearly better.
   - Inside the full pipeline (11 synthetic test scenes): residue 16% vs. 46% (rule-based 63%), PSNR 28.7 vs. 25.9 dB.
     **Caveat: the test clips come from this project's synthesizer, a favourable setting; real-video evidence is limited to qualitative comparisons.**
+- **Hard poses on third-party synthetic data (Face Synthetics part 1, 454 clear-lens hard-pose images)**: boundary F1 0.858 vs. 0.774 (take-off-eyeglasses), 0.715 (glasses-detector medium), 0.579 (rule-based); every gap's 95% bootstrap interval excludes zero. On near-frontal renders take-off-eyeglasses is slightly better (0.934 vs. 0.921). See §2.3.
 - **Shared weakness**: tiny faces (30–60 px) and dolly shots — 60–100% residue for every method, mostly limited by inpainting resolution.
 
 ## 1. Methods
@@ -53,6 +54,39 @@ With clear lenses the `GLASSES` class is the frame. 59 clear-lens and 65 opaque-
 | gd_medium | 0.747 | 0.726 | 0.511 | 0.618 | **0.722** |
 | tog | 0.881 | 0.742 | 0.186 | 0.442 | 0.594 |
 | rule | 0.594 | 0.455 | 0.415 | 0.555 | 0.643 |
+
+### 2.3 Microsoft Face Synthetics, part 1, by head pose
+
+The real CelebA photos above are near frontal (HeadPose estimate: 4 of 1,415 beyond ±25° pitch, none beyond ±25° roll), so hard poses are tested on a third-party renderer instead.
+
+- Data: part 1 of the full 100,000-image dataset (25,568 renders), 3,662 with glasses, 1,498 with clear lenses (where `GLASSES` = frame). 6 images with glasses lost to face detection.
+- Pose from the dataset's exact landmarks: pitch / yaw by PnP against a 68-point mean face (correlation with HeadPose on the 1,000-image sample 0.85 / 0.94), roll from the pupil line.
+- Hard = pitch beyond ±25°, yaw beyond ±45°, roll beyond ±25°, or two or more axes beyond ±25° (454 images).
+- Metric: boundary F1, 2 px; a sample with no predicted frame scores 0. Commands in `training/eval_real.py` (`prepare_fsynth`, `run --data fsynth_p1`).
+
+| Clear lenses | n | ours | tog | gd_medium | rule |
+|---|---|---|---|---|---|
+| Near frontal (all axes < 15°) | 392 | 0.921 | **0.934** | 0.791 | 0.638 |
+| Pitch beyond ±25° | 324 | **0.861** | 0.784 | 0.721 | 0.568 |
+| Pitch beyond ±40° | 125 | **0.832** | 0.703 | 0.661 | 0.516 |
+| Yaw beyond ±45° | 219 | **0.823** | 0.691 | 0.661 | 0.575 |
+| Roll beyond ±25° | 91 | **0.780** | 0.582 | 0.572 | 0.488 |
+| Two or more axes beyond ±25° | 199 | **0.828** | 0.704 | 0.662 | 0.546 |
+| All hard poses | 454 | **0.858** | 0.774 | 0.715 | 0.579 |
+| All hard poses, tiny face | 454 | **0.778** | 0.119 | 0.448 | 0.343 |
+| All hard poses, motion blur | 454 | **0.761** | 0.331 | 0.565 | 0.489 |
+| All clear lenses | 1,498 | **0.897** | 0.873 | 0.760 | 0.614 |
+
+Paired bootstrap (2,000 resamples), gap ours − baseline:
+
+| | Hard poses (n = 454) | Near frontal (n = 392) |
+|---|---|---|
+| vs. take-off-eyeglasses | +0.084 [+0.071, +0.098], ours higher on 74% | −0.014 [−0.020, −0.007], ours higher on 28% |
+| vs. glasses-detector medium | +0.143 [+0.133, +0.154], 95% | +0.130 [+0.122, +0.138], 98% |
+| vs. rule-based | +0.279 [+0.266, +0.292], 98% | +0.282 [+0.274, +0.292], 100% |
+
+Opaque lenses (frame and lens labelled together, n = 2,164): ours 0.693, gd_medium **0.736**, tog 0.596, rule 0.643.
+Caveats: still synthetic; frame-only labels with 2 px tolerance penalise thick masks (glasses-detector), which is why it stays below 0.8 here while it leads on real CelebA photos.
 
 ## 3. Synthetic validation set (in-distribution; used to find weak spots)
 
